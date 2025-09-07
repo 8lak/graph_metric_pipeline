@@ -16,7 +16,7 @@ BASE_URL = "https://libraries.io/api"
 BASE_URL_Python = "https://libraries.io/api/pypi"
 RAW_DATA_DIR = "data/raw_json"
 PACKAGE_LIST_PATH = "packages.txt"
-API_KEY = os.getenv('LIBRARIES_IO_API_KEY') # Make sure to set this environment variable
+API_KEY = os.getenv('LIBRARIES_IO_API_KEY')
 
 # --- Phase 1: Extract ---
 def phase1_extract(packages):
@@ -45,30 +45,35 @@ def phase1_extract(packages):
             # 2. Make the API call
             response = requests.get(url, params=params)
 
-            # 3. Check for errors (e.g., package not found)
-            response.raise_for_status() # This will raise an HTTPError for 4xx or 5xx statuses
+            # 3. Check for errors 
+            response.raise_for_status() # This check for HTTP status i.e 200, 400 , 500 
 
             # 4. Define the output path and save the data
             output_path = os.path.join(RAW_DATA_DIR, f"{package_name}.json")
             with open(output_path, 'w') as f:
+                # json.dump writes dic into file from output_path
                 json.dump(response.json(), f, indent=4)
 
             print(f"    -> Successfully saved to {output_path}")
 
+
+        # store error as e to handle with error logic
         except requests.exceptions.HTTPError as e:
             # Handle cases where the package might not exist on Libraries.io (404)
             if e.response.status_code == 404:
                 print(f"    -> ERROR: Package '{package_name}' not found (404). Skipping.")
             else:
                 print(f"    -> ERROR: HTTP Error for '{package_name}': {e}")
+    
         except requests.exceptions.RequestException as e:
-            # Handle other network-related errors (e.g., DNS failure)
+            # Handle other network-related errors DNS failure
             print(f"    -> ERROR: A network error occurred for '{package_name}': {e}")
+   
         except json.JSONDecodeError:
             # Handle cases where the response isn't valid JSON
             print(f"    -> ERROR: Failed to decode JSON for '{package_name}'.")
 
-        # 5. Be a good API citizen: wait a moment before the next request
+        # 5.Respect the request limits
         time.sleep(1) # Wait 1 second to avoid hitting rate limits
     print("--- Finished Phase 1: Extract ---")
 
@@ -81,7 +86,7 @@ def phase2_transform():
     """
     print("--- Starting Phase 2: Transform ---")
     edge_list = []
-    all_nodes = set() # Using a set is the perfect way to handle this.
+    all_nodes = set() 
 
     json_files = [f for f in os.listdir(RAW_DATA_DIR) if f.endswith('.json')]
 
@@ -94,14 +99,14 @@ def phase2_transform():
             with open(file_path, 'r') as f:
                 data = json.load(f)
 
-            # This is the key. We get the top-level 'dependencies' list.
+            # Select dependecies list
             dependencies = data.get('dependencies', [])
 
-            # Loop through the list just as you said.
+            # Loop through the list 
             for dep in dependencies:
                 # The name of the package is in the 'name' field of each dependency object.
                 dependency_package = dep.get('name')
-                if dependency_package: # Ensure the name exists
+                if dependency_package: 
                     edge_list.append((dependency_package, source_package))
                     all_nodes.add(dependency_package)
 
@@ -120,6 +125,7 @@ def phase2_transform():
     out_centrality = nx.out_degree_centrality(G)
     print("    -> Calculated both in-degree and out-degree centrality.")
 
+    # create the array of graph measures for later loading
     combined_data = []
     for node in all_nodes:
         combined_data.append({
@@ -130,7 +136,7 @@ def phase2_transform():
 
 
     print("--- Finished Phase 2: Transform ---")
-    # This function will return the centrality dictionary.
+
     return combined_data
 
 
@@ -147,14 +153,12 @@ def phase3_load(centrality_data):
         return
 
     # 2. Convert the dictionary to a pandas DataFrame.
-    # The .items() method creates a list of (key, value) pairs,
-    # which is a perfect format for creating a two-column DataFrame.
     df = pd.DataFrame(centrality_data)
 
     # 3. Sort the DataFrame by centrality score, from highest to lowest.
     df_sorted = df.sort_values(by='out_degree_centrality', ascending=False)
 
-    # Let's print the top 5 most central packages as a preview
+    # Print the top 5 most central packages as a preview
     print("    -> Top 5 packages by metric:")
     print("    --- Most Foundational (Highest Out-Degree) ---")
     print(df_sorted[['package', 'out_degree_centrality']].head().to_string())
@@ -162,8 +166,7 @@ def phase3_load(centrality_data):
     print(df.sort_values(by='in_degree_centrality', ascending=False)[['package', 'in_degree_centrality']].head().to_string())
 
     # 4. Define the output path and save the DataFrame to a CSV file.
-    # `index=False` is very important; it prevents pandas from writing
-    # the DataFrame's row numbers into the file.
+    # `index=False` it prevents pandas from writing the DataFrame's row numbers into the file.
     output_path = "analysis_ready_data.csv"
     df_sorted.to_csv(output_path, index=False)
 
@@ -177,8 +180,6 @@ def main():
     Orchestrates the execution of the three pipeline phases.
     """
 
-     # 2. LOAD THE .ENV FILE
-    # Check for API Key
     if not API_KEY:
         raise ValueError("LIBRARIES_IO_API_KEY environment variable not set.")
 
